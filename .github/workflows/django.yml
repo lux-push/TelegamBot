@@ -28,4 +28,4 @@ jobs:
     - name: Run Tests
       run: |
         python -c "import bot_a; print('✅ Imports OK Bot_a')"
-        python -c "import bot_b; print('✅ Imports OK Bot_b')"
+        python -c "import bot b; print('✅ Imports OK Bot_b')"
