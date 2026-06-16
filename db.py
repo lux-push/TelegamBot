@@ -2,6 +2,7 @@ import sqlite3
 from pathlib import Path
 from datetime import datetime
 
+
 BASE_DIR = Path(__file__).resolve().parent
 
 
@@ -33,6 +34,14 @@ class Database:
                     platform_avito INTEGER DEFAULT 0,
                     platform_kufar INTEGER DEFAULT 0,
                     total INTEGER DEFAULT 0
+                )
+            """)
+            
+            # Таблица менеджеров
+            self.cursor.execute("""
+                CREATE TABLE IF NOT EXISTS managers (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    chat_id INTEGER UNIQUE
                 )
             """)
             
@@ -85,6 +94,61 @@ class Database:
                 "total": result[2] if result else 0
             }
 
+    # =====================
+    # Менеджеры
+    # =====================
+
+    def add_manager(self, chat_id: int):
+        """Добавляет менеджера по chat_id"""
+        with self.connection:
+            self.cursor.execute(
+                "INSERT OR IGNORE INTO managers (chat_id) VALUES (?)",
+                (chat_id,)
+            )
+            self.connection.commit()
+
+    def delete_manager(self, chat_id: int) -> bool:
+        """Удаляет менеджера по chat_id. Возвращает True, если кто-то был удалён."""
+        with self.connection:
+            cur = self.cursor.execute(
+                "DELETE FROM managers WHERE chat_id = ?",
+                (chat_id,)
+            )
+            self.connection.commit()
+            return cur.rowcount > 0
+
+    def get_managers(self):
+        """Возвращает всех менеджеров"""
+        with self.connection:
+            return self.cursor.execute(
+                "SELECT chat_id FROM managers ORDER BY id DESC"
+            ).fetchall()
+
+    # =====================
+    # Очистка заявок
+    # =====================
+
+    def clear_applications(self, platform: str | None = None) -> int:
+        """
+        Удаляет заявки из таблицы applications.
+        
+        :param platform: 
+            - "Авито" — очистить только Авито
+            - "Куфар" — очистить только Куфар
+            - None — очистить все заявки
+        :return: количество удалённых заявок
+        """
+        with self.connection:
+            if platform is not None:
+                cur = self.cursor.execute(
+                    "DELETE FROM applications WHERE platform = ?",
+                    (platform,)
+                )
+            else:
+                cur = self.cursor.execute("DELETE FROM applications")
+            
+            self.connection.commit()
+            return cur.rowcount
+
     def close(self):
         self.connection.close()
-

@@ -1,5 +1,5 @@
 class ManagerStore:
-    ADMIN_ID = 123456789  # Замени на ADMIN_CHAT_ID из config.py
+    ADMIN_ID = 123456789  
     
     def __init__(self):
         self.is_monitoring = True

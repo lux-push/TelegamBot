@@ -1,16 +1,18 @@
 import asyncio
 import logging
 from pathlib import Path
+
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.filters import Command
 from aiogram.types import Message, FSInputFile, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+
 from config import BOT_A_TOKEN, BOT_B_TOKEN, ADMIN_CHAT_ID, ADMIN_IDS
 from db import Database
 
-
 logging.basicConfig(level=logging.INFO)
+
 BASE_DIR = Path(__file__).resolve().parent
 bot = Bot(token=BOT_A_TOKEN)
 dp = Dispatcher()
@@ -51,7 +53,7 @@ class ApplicationForm(StatesGroup):
 
 
 def is_yes(text: str) -> bool:
-    return "да" in text.lower()
+    return text and "да" in text.lower()
 
 
 def photo(name: str) -> FSInputFile:
@@ -75,15 +77,8 @@ async def delete_last_bot_message(state: FSMContext, chat_id: int):
             pass
 
 
-async def restart_platform(message: Message, state: FSMContext):
-    """🔄 Возврат к выбору платформы"""
-    await delete_user_message(message)
-    await delete_last_bot_message(state, message.chat.id)
-    await send_step_photo(message, state, "apply_5.jpg", "❌ Выберите платформу заново:", platform_keyboard)
-    await state.set_state(ApplicationForm.platform)
-
-
 async def send_step_photo(message: Message, state: FSMContext, photo_name: str, caption: str, reply_markup=None):
+    await delete_last_bot_message(state, message.chat.id)
     sent = await message.answer_photo(
         photo=photo(photo_name),
         caption=caption,
@@ -93,6 +88,7 @@ async def send_step_photo(message: Message, state: FSMContext, photo_name: str, 
 
 
 async def send_final_photo(message: Message, state: FSMContext):
+    await delete_last_bot_message(state, message.chat.id)
     sent = await message.answer_photo(
         photo=photo("apply_1.jpg"),
         caption="✅ Заявка принята\n\n"
@@ -102,6 +98,19 @@ async def send_final_photo(message: Message, state: FSMContext):
         reply_markup=main_menu
     )
     await state.update_data(last_bot_msg_id=sent.message_id)
+
+
+async def restart_platform(message: Message, state: FSMContext):
+    """🔄 Возврат к выбору платформы"""
+    await delete_user_message(message)
+    await send_step_photo(
+        message,
+        state,
+        "apply_5.jpg",
+        "❌ Выберите платформу заново:",
+        platform_keyboard
+    )
+    await state.set_state(ApplicationForm.platform)
 
 
 async def send_stats_to_bot_b(platform: str, user_id: int, username: str, extra_info: str = ""):
@@ -122,27 +131,23 @@ async def send_stats_to_bot_b(platform: str, user_id: int, username: str, extra_
         await stats_bot.session.close()
 
 
-@router.message(Command("start"), F.text == "/start")
-async def start_handler(message: Message):
-    # ✅ Сохраняем ID сообщения start для удаления
-    sent = await message.answer(
-        "🚀 Bot Kufar запущен.\n\n"
-        "/apply — подать заявку",
-        reply_markup=main_menu
+@router.message(Command("start"))
+async def start_handler(message: Message, state: FSMContext):
+    await state.clear()
+    await delete_user_message(message)
+    await send_step_photo(
+        message,
+        state,
+        "apply_5.jpg",
+        "🚀 Bot Kufar запущен.\n\n/apply — подать заявку",
+        main_menu
     )
-    await message.answer("Нажми кнопку ниже 👇", reply_markup=main_menu)
 
 
-@router.message(Command("apply"), F.text == "/apply")
+@router.message(Command("apply"))
 async def apply_start(message: Message, state: FSMContext):
     await state.clear()
-    
-    # ✅ Удаляем сообщение /start (последнее сообщение бота)
-    try:
-        await bot.delete_message(chat_id=message.chat.id, message_id=message.chat.id + 1)  # Примерный ID
-    except Exception:
-        pass
-    
+    await delete_user_message(message)
     await send_step_photo(message, state, "apply_5.jpg", "1. Выбор Авито или Куфар", platform_keyboard)
     await state.set_state(ApplicationForm.platform)
 
@@ -150,13 +155,11 @@ async def apply_start(message: Message, state: FSMContext):
 @router.message(ApplicationForm.platform)
 async def platform_handler(message: Message, state: FSMContext):
     await delete_user_message(message)
-    await delete_last_bot_message(state, message.chat.id)
 
-    platform_text = message.text.strip()
-    
-    if "авито" in platform_text.lower():
-        platform = "Авито"
-        await state.update_data(platform=platform)
+    platform_text = (message.text or "").strip().lower()
+
+    if "авито" in platform_text:
+        await state.update_data(platform="Авито")
         await send_step_photo(
             message,
             state,
@@ -167,9 +170,8 @@ async def platform_handler(message: Message, state: FSMContext):
         await state.set_state(ApplicationForm.rf_or_by)
         return
 
-    if "куфар" in platform_text.lower():
-        platform = "Куфар"
-        await state.update_data(platform=platform)
+    if "куфар" in platform_text:
+        await state.update_data(platform="Куфар")
         await send_step_photo(
             message,
             state,
@@ -186,41 +188,40 @@ async def platform_handler(message: Message, state: FSMContext):
 @router.message(ApplicationForm.rf_or_by)
 async def rf_or_by_handler(message: Message, state: FSMContext):
     await delete_user_message(message)
-    await delete_last_bot_message(state, message.chat.id)
 
     data = await state.get_data()
     platform = data.get("platform")
+    user_text = message.text or ""
 
-    if is_yes(message.text):
-        if platform == "Авито":
-            await state.update_data(rf_citizen="Да")
-            await send_step_photo(
-                message,
-                state,
-                "apply_3.jpg",
-                "3. Есть ли вам 14 лет?",
-                yes_no_keyboard
-            )
-            await state.set_state(ApplicationForm.age_14)
-            return
-
-        # ✅ Куфар заявка принята
-        db.add_application(message.from_user.id, platform, "Да", 1)
-        await send_stats_to_bot_b(platform, message.from_user.id, message.from_user.username or 'нет', "Да")
-        await send_final_photo(message, state)
-        await state.clear()
+    if not is_yes(user_text):
+        await restart_platform(message, state)
         return
 
-    await restart_platform(message, state)
+    if platform == "Авито":
+        await state.update_data(rf_citizen="Да")
+        await send_step_photo(
+            message,
+            state,
+            "apply_3.jpg",
+            "3. Есть ли вам 14 лет?",
+            yes_no_keyboard
+        )
+        await state.set_state(ApplicationForm.age_14)
+        return
+
+    db.add_application(message.from_user.id, platform, "Да", 1)
+    await send_stats_to_bot_b(platform, message.from_user.id, message.from_user.username or "нет", "Да")
+    await send_final_photo(message, state)
+    await state.clear()
 
 
 @router.message(ApplicationForm.age_14)
 async def age_14_handler(message: Message, state: FSMContext):
     await delete_user_message(message)
-    await delete_last_bot_message(state, message.chat.id)
 
-    if not is_yes(message.text):
-        await message.answer_photo(
+    if not is_yes(message.text or ""):
+        await delete_last_bot_message(state, message.chat.id)
+        sent = await message.answer_photo(
             photo=photo("apply_2.jpg"),
             caption=(
                 "😔 К сожалению, мы не можем продолжить: необходим возраст 14+ лет.\n\n"
@@ -230,22 +231,23 @@ async def age_14_handler(message: Message, state: FSMContext):
             ),
             reply_markup=main_menu
         )
+        await state.update_data(last_bot_msg_id=sent.message_id)
         await state.clear()
         return
 
-    # ✅ Авито заявка принята
     data = await state.get_data()
+
     db.add_application(
         message.from_user.id,
-        data.get('platform'),
-        data.get('rf_citizen'),
+        data.get("platform"),
+        data.get("rf_citizen"),
         1
     )
 
     await send_stats_to_bot_b(
-        data.get('platform'),
+        data.get("platform"),
         message.from_user.id,
-        message.from_user.username or 'нет',
+        message.from_user.username or "нет",
         f"Гражданин РФ: {data.get('rf_citizen')} | 14+: Да"
     )
 
