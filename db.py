@@ -2,7 +2,6 @@ import sqlite3
 from pathlib import Path
 from datetime import datetime
 
-
 BASE_DIR = Path(__file__).resolve().parent
 
 
@@ -15,7 +14,6 @@ class Database:
     def create_tables(self):
         """Создаёт необходимые таблицы"""
         with self.connection:
-            # Таблица заявок
             self.cursor.execute("""
                 CREATE TABLE IF NOT EXISTS applications (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -26,8 +24,7 @@ class Database:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
-            
-            # Таблица статистики
+
             self.cursor.execute("""
                 CREATE TABLE IF NOT EXISTS stats (
                     date TEXT,
@@ -36,15 +33,14 @@ class Database:
                     total INTEGER DEFAULT 0
                 )
             """)
-            
-            # Таблица менеджеров
+
             self.cursor.execute("""
                 CREATE TABLE IF NOT EXISTS managers (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     chat_id INTEGER UNIQUE
                 )
             """)
-            
+
             self.connection.commit()
 
     def add_application(self, user_id: int, platform: str, citizen: str, age_ok: int = 1):
@@ -54,31 +50,31 @@ class Database:
                 "INSERT INTO applications (user_id, platform, citizen, age_ok) VALUES (?, ?, ?, ?)",
                 (user_id, platform, citizen, age_ok)
             )
-            
-            # Обновляем статистику
+
             if age_ok:
+                today = datetime.now().strftime("%Y-%m-%d")
                 self.cursor.execute(
                     "INSERT OR IGNORE INTO stats (date) VALUES (?)",
-                    (datetime.now().strftime("%Y-%m-%d"),)
+                    (today,)
                 )
                 if platform == "Авито":
                     self.cursor.execute(
                         "UPDATE stats SET platform_avito = platform_avito + 1, total = total + 1 WHERE date = ?",
-                        (datetime.now().strftime("%Y-%m-%d"),)
+                        (today,)
                     )
                 else:
                     self.cursor.execute(
                         "UPDATE stats SET platform_kufar = platform_kufar + 1, total = total + 1 WHERE date = ?",
-                        (datetime.now().strftime("%Y-%m-%d"),)
+                        (today,)
                     )
-            
+
             self.connection.commit()
 
     def get_applications_count(self) -> int:
         """Возвращает общее количество заявок"""
         with self.connection:
             result = self.cursor.execute("SELECT COUNT(*) FROM applications").fetchone()
-            return result[0]
+            return result[0] if result else 0
 
     def get_today_stats(self) -> dict:
         """Статистика за сегодня"""
@@ -94,21 +90,18 @@ class Database:
                 "total": result[2] if result else 0
             }
 
-    # =====================
-    # Менеджеры
-    # =====================
-
-    def add_manager(self, chat_id: int):
-        """Добавляет менеджера по chat_id"""
+    def add_manager(self, chat_id: int) -> bool:
+        """Добавляет менеджера по chat_id. True если добавлен новый."""
         with self.connection:
-            self.cursor.execute(
+            cur = self.cursor.execute(
                 "INSERT OR IGNORE INTO managers (chat_id) VALUES (?)",
                 (chat_id,)
             )
             self.connection.commit()
+            return cur.rowcount > 0
 
     def delete_manager(self, chat_id: int) -> bool:
-        """Удаляет менеджера по chat_id. Возвращает True, если кто-то был удалён."""
+        """Удаляет менеджера по chat_id. True если был удалён."""
         with self.connection:
             cur = self.cursor.execute(
                 "DELETE FROM managers WHERE chat_id = ?",
@@ -124,15 +117,11 @@ class Database:
                 "SELECT chat_id FROM managers ORDER BY id DESC"
             ).fetchall()
 
-    # =====================
-    # Очистка заявок
-    # =====================
-
     def clear_applications(self, platform: str | None = None) -> int:
         """
         Удаляет заявки из таблицы applications.
-        
-        :param platform: 
+
+        :param platform:
             - "Авито" — очистить только Авито
             - "Куфар" — очистить только Куфар
             - None — очистить все заявки
@@ -146,7 +135,7 @@ class Database:
                 )
             else:
                 cur = self.cursor.execute("DELETE FROM applications")
-            
+
             self.connection.commit()
             return cur.rowcount
 

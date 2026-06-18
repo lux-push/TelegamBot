@@ -19,7 +19,6 @@ async def run_bot(script_name: str):
 async def main():
     print("🚀 Запуск всех ботов...")
     
-    # Запуск всех ботов параллельно
     tasks = [
         run_bot("bot_a.py"),
         run_bot("bot_b.py")

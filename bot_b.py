@@ -46,6 +46,7 @@ def create_manager_keyboard():
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="➕ Добавить менеджера", callback_data="add_manager"))
     builder.row(InlineKeyboardButton(text="➖ Удалить менеджера", callback_data="delete_manager"))
+    builder.row(InlineKeyboardButton(text="📋 Список менеджеров", callback_data="list_managers"))
     builder.row(InlineKeyboardButton(text="🗑 Очистить заявки", callback_data="clear_menu"))
     builder.row(InlineKeyboardButton(text="🔙 Главное меню", callback_data="main_menu"))
     return builder.as_markup()
@@ -71,23 +72,19 @@ def create_clear_keyboard():
 def create_clear_confirm_keyboard(action: str):
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="✅ Да, очистить", callback_data=f"confirm_clear_{action}"))
-    builder.row(
-        InlineKeyboardButton(text="❌ Нет, отмена", callback_data="cancel_clear")
-    )
+    builder.row(InlineKeyboardButton(text="❌ Нет, отмена", callback_data="cancel_clear"))
     builder.row(InlineKeyboardButton(text="🔙 Назад", callback_data="clear_menu"))
     return builder.as_markup()
 
 
 def create_pagination_keyboard(platform: str, page: int, total_pages: int):
     builder = InlineKeyboardBuilder()
-
     row = []
     if page > 1:
         row.append(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"page_{platform}_{page-1}"))
     row.append(InlineKeyboardButton(text=f"{page}/{total_pages}", callback_data="none"))
     if page < total_pages:
         row.append(InlineKeyboardButton(text="Вперед ➡️", callback_data=f"page_{platform}_{page+1}"))
-
     builder.row(*row)
     builder.row(InlineKeyboardButton(text="🇷🇺 Авито", callback_data="list_avito"))
     builder.row(InlineKeyboardButton(text="🇧🇾 Куфар", callback_data="list_kufar"))
@@ -155,6 +152,7 @@ async def manager_callback(callback: CallbackQuery):
         "Здесь можно:\n"
         "• Добавить менеджера по chat_id\n"
         "• Удалить менеджера по chat_id\n"
+        "• Посмотреть список менеджеров\n"
         "• Очистить все заявки",
         reply_markup=create_manager_keyboard(),
         parse_mode="HTML"
@@ -198,12 +196,19 @@ async def receive_manager_chat_id(message: Message, state: FSMContext):
     manager_chat_id = int(text)
 
     try:
-        db.add_manager(manager_chat_id)
-        await message.answer(
-            f"✅ Менеджер добавлен.\n\nChat ID: <code>{manager_chat_id}</code>",
-            parse_mode="HTML",
-            reply_markup=create_manager_keyboard()
-        )
+        added = db.add_manager(manager_chat_id)
+        if added:
+            await message.answer(
+                f"✅ Менеджер добавлен.\n\nChat ID: <code>{manager_chat_id}</code>",
+                parse_mode="HTML",
+                reply_markup=create_manager_keyboard()
+            )
+        else:
+            await message.answer(
+                f"⚠️ Менеджер уже существует.\n\nChat ID: <code>{manager_chat_id}</code>",
+                parse_mode="HTML",
+                reply_markup=create_manager_keyboard()
+            )
     except Exception as e:
         await message.answer(
             f"❌ Не удалось добавить менеджера: {e}",
@@ -271,6 +276,28 @@ async def receive_delete_manager_chat_id(message: Message, state: FSMContext):
         )
 
     await state.clear()
+
+
+@router.callback_query(F.data == "list_managers")
+async def list_managers_callback(callback: CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("❌ Доступ запрещён")
+        return
+
+    managers = db.get_managers()
+    if not managers:
+        text = "👨‍💼 <b>Список менеджеров</b>\n\nМенеджеры не добавлены."
+    else:
+        text = "👨‍💼 <b>Список менеджеров</b>\n\n"
+        for i, manager in enumerate(managers, start=1):
+            text += f"{i}. <code>{manager[0]}</code>\n"
+
+    await callback.message.edit_text(
+        text,
+        reply_markup=create_manager_keyboard(),
+        parse_mode="HTML"
+    )
+    await callback.answer()
 
 
 @router.callback_query(F.data == "clear_menu")

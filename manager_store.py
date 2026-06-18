@@ -3,4 +3,4 @@ class ManagerStore:
     
     def __init__(self):
         self.is_monitoring = True
-        self.check_interval = 300  # 5 минут
+        self.check_interval = 300 

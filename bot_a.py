@@ -20,7 +20,6 @@ router = Router()
 db = Database()
 
 
-# ✅ КЛАВИАТУРЫ
 main_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="/start"), KeyboardButton(text="/apply")]
@@ -101,7 +100,6 @@ async def send_final_photo(message: Message, state: FSMContext):
 
 
 async def restart_platform(message: Message, state: FSMContext):
-    """🔄 Возврат к выбору платформы"""
     await delete_user_message(message)
     await send_step_photo(
         message,
@@ -155,7 +153,6 @@ async def apply_start(message: Message, state: FSMContext):
 @router.message(ApplicationForm.platform)
 async def platform_handler(message: Message, state: FSMContext):
     await delete_user_message(message)
-
     platform_text = (message.text or "").strip().lower()
 
     if "авито" in platform_text:
@@ -191,7 +188,7 @@ async def rf_or_by_handler(message: Message, state: FSMContext):
 
     data = await state.get_data()
     platform = data.get("platform")
-    user_text = message.text or ""
+    user_text = (message.text or "").strip().lower()
 
     if not is_yes(user_text):
         await restart_platform(message, state)
@@ -209,10 +206,19 @@ async def rf_or_by_handler(message: Message, state: FSMContext):
         await state.set_state(ApplicationForm.age_14)
         return
 
-    db.add_application(message.from_user.id, platform, "Да", 1)
-    await send_stats_to_bot_b(platform, message.from_user.id, message.from_user.username or "нет", "Да")
-    await send_final_photo(message, state)
-    await state.clear()
+    if platform == "Куфар":
+        db.add_application(message.from_user.id, "Куфар", "Да", 1)
+        await send_stats_to_bot_b(
+            "Куфар",
+            message.from_user.id,
+            message.from_user.username or "нет",
+            "Гражданин Беларуси: Да"
+        )
+        await send_final_photo(message, state)
+        await state.clear()
+        return
+
+    await restart_platform(message, state)
 
 
 @router.message(ApplicationForm.age_14)
